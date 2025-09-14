@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+  localstack:
+    image: localstack/localstack:1.4.0
+    environment:
+      SERVICES: s3,iam,cloudwatch,logs,ecs,ec2
+      AWS_DEFAULT_REGION: us-east-1
+    ports:
+      - "4566:4566"
+    volumes:
+      - ./.localstack:/var/lib/localstack
+
+  processor:
+    build: ./processor
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      UPLOAD_BUCKET: uploads
+      OUTPUT_BUCKET: processed
+    depends_on:
+      - localstack
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
