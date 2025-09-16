@@ -2,9 +2,9 @@ version: "3.8"
 
 services:
   localstack:
-    image: localstack/localstack:1.4.0
+    image: localstack/localstack:latest
     environment:
-      SERVICES: s3,iam,cloudwatch,logs,sns,sqs,ce
+      SERVICES: s3,iam,cloudwatch,logs,sns,sqs,ce,ecs,ec2
       AWS_DEFAULT_REGION: us-east-1
       ENABLE_CLOUDWATCH_LOGS: 1
       ENABLE_COSTS: 1
@@ -28,14 +28,7 @@ services:
       COST_PER_IMAGE_USD: "0.0005"
     depends_on:
       - localstack
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
+    
   webapp:
     build: ./webapp
     ports:
