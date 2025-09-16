@@ -4,8 +4,10 @@ services:
   localstack:
     image: localstack/localstack:1.4.0
     environment:
-      SERVICES: s3,iam,cloudwatch,logs,ecs,ec2
+      SERVICES: s3,iam,cloudwatch,logs,sns,sqs,ce
       AWS_DEFAULT_REGION: us-east-1
+      ENABLE_CLOUDWATCH_LOGS: 1
+      ENABLE_COSTS: 1
     ports:
       - "4566:4566"
     volumes:
@@ -20,6 +22,10 @@ services:
       AWS_ENDPOINT_URL: http://localstack:4566
       UPLOAD_BUCKET: uploads
       OUTPUT_BUCKET: processed
+      UPLOAD_QUEUE_NAME: upload-events
+      CLOUDWATCH_LOG_GROUP: /local/processor
+      CLOUDWATCH_LOG_STREAM: gpu-worker
+      COST_PER_IMAGE_USD: "0.0005"
     depends_on:
       - localstack
     deploy:
@@ -29,3 +35,22 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  webapp:
+    build: ./webapp
+    ports:
+      - "5000:5000"
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      UPLOAD_BUCKET: uploads
+      OUTPUT_BUCKET: processed
+      PROCESSED_TOPIC_NAME: processed-updates
+      SNS_HTTP_ENDPOINT: http://webapp:5000/sns/processed
+      PUBLIC_S3_ENDPOINT: http://localhost:4566
+      CLOUDWATCH_LOG_GROUP: /local/webapp
+      CLOUDWATCH_LOG_STREAM: frontend
+    depends_on:
+      - localstack

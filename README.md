@@ -1,15 +1,19 @@
 # Serverless Photo Processor (Docker Example)
 
-This repository demonstrates a minimal photo-processing pipeline that can be
-run locally on a GPU-enabled machine using Docker. The architecture mirrors the
-AWS serverless design with the following local components:
+This repository demonstrates an end-to-end photo-processing pipeline that can
+be run locally on a GPU-enabled machine using Docker Compose. The architecture
+mirrors a typical AWS serverless design with the following components:
 
-- **LocalStack** – runs a local instance of core AWS services (S3, IAM,
-  CloudWatch, ECS, EC2, etc.) so you can explore IAM policies, VPCs, and
-  track usage metrics without touching a real AWS account.
-- **Processor** – a PyTorch-based container that watches the upload bucket,
-  performs a simple GPU operation (color inversion), and writes results to the
-  processed bucket while reporting metrics to CloudWatch.
+- **LocalStack** – runs local versions of S3, CloudWatch (metrics + logs), SNS,
+  SQS, IAM, and the Cost Explorer APIs so you can iterate without touching a
+  real AWS account while still collecting usage data.
+- **Processor** – a PyTorch-based worker that is triggered by native S3 event
+  notifications (delivered through SQS), performs a GPU color inversion, and
+  stores the result in the processed bucket while sending CloudWatch metrics
+  for both throughput and per-image cost.
+- **Web App** – a Flask UI that lets you upload photos, receives SNS
+  notifications when the processed image lands in S3 (no polling required),
+  and streams updates to the browser via Server-Sent Events.
 
 The setup can be used for local development and later ported to actual AWS
 services such as Amazon S3 and SageMaker Studio.
@@ -21,24 +25,36 @@ services such as Amazon S3 and SageMaker Studio.
 
 ## Run Locally
 
-```bash
-docker compose up --build
-```
+1. Build and launch the stack:
 
-LocalStack exposes AWS APIs on `http://localhost:4566`. Example commands using
-the AWS CLI:
+   ```bash
+   docker compose pull        # optional, ensures the latest LocalStack image
+   docker compose up --build
+   ```
 
-```bash
-aws --endpoint-url=http://localhost:4566 s3 ls
-aws --endpoint-url=http://localhost:4566 iam list-users
-aws --endpoint-url=http://localhost:4566 cloudwatch list-metrics
-aws --endpoint-url=http://localhost:4566 ecs list-clusters
-aws --endpoint-url=http://localhost:4566 ec2 describe-vpcs
-```
+2. Export dummy AWS credentials (LocalStack accepts any values) and explore the
+   emulated AWS services:
 
-Upload images to the `uploads` bucket and watch as processed images appear in
-the `processed` bucket. Each processed image emits a `PhotoPipeline/ImagesProcessed`
-metric to CloudWatch, allowing usage tracking.
+   ```bash
+   export AWS_ACCESS_KEY_ID=test
+   export AWS_SECRET_ACCESS_KEY=test
+   export AWS_DEFAULT_REGION=us-east-1
+
+   aws --endpoint-url=http://localhost:4566 s3 ls
+   aws --endpoint-url=http://localhost:4566 sqs list-queues
+   aws --endpoint-url=http://localhost:4566 sns list-topics
+   aws --endpoint-url=http://localhost:4566 logs describe-log-groups
+   aws --endpoint-url=http://localhost:4566 cloudwatch list-metrics --namespace PhotoPipeline
+   aws --endpoint-url=http://localhost:4566 ce get-cost-and-usage --time-period Start=$(date +%Y-%m-01),End=$(date -I) --granularity DAILY --metrics BlendedCost
+   ```
+
+3. Open the UI at [http://localhost:5000](http://localhost:5000) to upload
+   photos. Each upload triggers the processor automatically via S3 notifications,
+   and the processed image appears in the browser as soon as S3 publishes the
+   SNS event. Application logs are shipped to CloudWatch log groups
+   `/local/webapp` and `/local/processor`, while the processor tracks both the
+   `ImagesProcessed` and `ProcessingCost` metrics under the `PhotoPipeline`
+   namespace.
 
 ## Porting to AWS
 
@@ -47,7 +63,10 @@ The local components correspond to AWS services:
 | Local Component | AWS Equivalent |
 | ----------------|---------------|
 | LocalStack S3 buckets `uploads` and `processed` | Amazon S3 buckets |
-| Processor container | AWS Lambda invoking SageMaker |
+| S3 → SQS notification | S3 event notification to SQS |
+| Processor container | Lambda/SageMaker processing job |
+| SNS + web app webhook | S3 → SNS → HTTPS subscriber |
+| Server-Sent Events stream | API Gateway WebSocket / AppSync subscription |
 
 ### Running in SageMaker Studio
 
