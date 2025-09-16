@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Image Processing Pipeline</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 2rem;
+            background-color: #f6f8fa;
+        }
+        h1, h2 {
+            color: #1f2937;
+        }
+        form {
+            margin-bottom: 2rem;
+            padding: 1rem;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        #status {
+            margin-top: 0.5rem;
+            color: #1d4ed8;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 1rem;
+        }
+        .card {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 0.5rem;
+            text-align: center;
+        }
+        .card img {
+            max-width: 100%;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Image Processing Pipeline</h1>
+    <p>Upload a photo to trigger GPU processing. Processed photos appear instantly below.</p>
+    <form id="uploadForm">
+        <input type="file" name="file" accept="image/*" required>
+        <button type="submit">Upload</button>
+        <div id="status"></div>
+    </form>
+
+    <h2>Processed Images</h2>
+    <div class="grid" id="images">
+        {% for image in images %}
+        <div class="card" data-key="{{ image.key }}">
+            <img src="{{ image.url }}" alt="{{ image.key }}" />
+            <p>{{ image.key }}</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    <script>
+        const form = document.getElementById('uploadForm');
+        const statusBox = document.getElementById('status');
+        const imagesGrid = document.getElementById('images');
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const fileInput = form.querySelector('input[type="file"]');
+            if (!fileInput.files.length) {
+                statusBox.textContent = 'Please choose a file.';
+                return;
+            }
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            try {
+                statusBox.textContent = 'Uploading...';
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!response.ok) {
+                    const data = await response.json();
+                    statusBox.textContent = data.error || 'Upload failed';
+                } else {
+                    statusBox.textContent = 'Upload succeeded. Processing...';
+                    fileInput.value = '';
+                }
+            } catch (err) {
+                console.error(err);
+                statusBox.textContent = 'Upload failed';
+            }
+        });
+
+        const source = new EventSource('/events');
+        source.onmessage = (event) => {
+            const payload = JSON.parse(event.data);
+            let card = document.querySelector(`.card[data-key="${payload.key}"]`);
+            if (!card) {
+                card = document.createElement('div');
+                card.className = 'card';
+                card.dataset.key = payload.key;
+                card.innerHTML = `<img src="${payload.url}" alt="${payload.key}" /><p>${payload.key}</p>`;
+                imagesGrid.prepend(card);
+            } else {
+                const img = card.querySelector('img');
+                if (img) {
+                    img.src = payload.url;
+                }
+            }
+            statusBox.textContent = 'Processing complete!';
+        };
+
+        source.onerror = () => {
+            statusBox.textContent = 'Connection lost. Attempting to reconnect...';
+        };
+    </script>
+</body>
+</html>
