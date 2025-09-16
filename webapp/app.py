@@ -13,8 +13,8 @@ from botocore.exceptions import ClientError
 from flask import Flask, Response, jsonify, render_template, request
 from werkzeug.utils import secure_filename
 
-APP = Flask(__name__)
-APP.secret_key = os.environ.get("FLASK_SECRET_KEY", "development")
+app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "development")
 
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 AWS_ENDPOINT_URL = os.environ.get("AWS_ENDPOINT_URL")
@@ -89,6 +89,7 @@ LOGGER = configure_logging()
 SUBSCRIBERS: List[queue.Queue] = []
 SUBSCRIBERS_LOCK = threading.Lock()
 INITIALIZED = threading.Event()
+INITIALIZER_STARTED = threading.Event()
 
 
 def publish_event(payload: Dict[str, str]) -> None:
@@ -193,18 +194,29 @@ def initialize_async() -> None:
             time.sleep(2)
 
 
-@APP.before_first_request
-def before_first_request() -> None:
+def start_initializer_thread() -> None:
+    if INITIALIZER_STARTED.is_set():
+        return
+    INITIALIZER_STARTED.set()
     threading.Thread(target=initialize_async, daemon=True).start()
 
 
-@APP.route("/")
+if hasattr(app, "before_first_request"):
+    app.before_first_request(start_initializer_thread)
+else:
+
+    @app.before_request
+    def _ensure_initializer_started() -> None:
+        start_initializer_thread()
+
+
+@app.route("/")
 def index() -> str:
     images = list_processed_images()
     return render_template("index.html", images=images)
 
 
-@APP.route("/upload", methods=["POST"])
+@app.route("/upload", methods=["POST"])
 def upload() -> Response:
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
@@ -230,7 +242,7 @@ def upload() -> Response:
     return jsonify({"message": "Uploaded", "key": key}), 201
 
 
-@APP.route("/events")
+@app.route("/events")
 def events() -> Response:
     def generate() -> Iterable[str]:
         if not INITIALIZED.is_set():
@@ -262,7 +274,7 @@ def list_processed_images() -> List[Dict[str, str]]:
     return objects
 
 
-@APP.route("/sns/processed", methods=["POST"])
+@app.route("/sns/processed", methods=["POST"])
 def sns_processed() -> Response:
     data = request.get_data(as_text=True)
     if not data:
@@ -310,4 +322,4 @@ def sns_processed() -> Response:
 
 
 if __name__ == "__main__":
-    APP.run(host="0.0.0.0", port=5000, threaded=True)
+    app.run(host="0.0.0.0", port=5000, threaded=True)
