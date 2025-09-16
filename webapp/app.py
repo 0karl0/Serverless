@@ -103,9 +103,38 @@ def event_stream() -> Iterable[str]:
     client_queue: "queue.Queue[Dict[str, str]]" = queue.Queue()
     with SUBSCRIBERS_LOCK:
         SUBSCRIBERS.append(client_queue)
+
+    def connection_is_open() -> bool:
+        environ = request.environ
+        websocket = environ.get("wsgi.websocket")
+        if websocket is not None:
+            if getattr(websocket, "closed", False):
+                return False
+            connected = getattr(websocket, "connected", None)
+            if connected is False:
+                return False
+
+        socket = environ.get("werkzeug.socket")
+        if socket is not None:
+            closed = getattr(socket, "closed", None)
+            if closed is True:
+                return False
+            closed = getattr(socket, "_closed", None)
+            if closed is True:
+                return False
+
+        return True
+
     try:
         while True:
-            message = client_queue.get()
+            try:
+                message = client_queue.get(timeout=1.0)
+            except queue.Empty:
+                if not connection_is_open():
+                    break
+                continue
+            if not connection_is_open():
+                break
             yield f"data: {json.dumps(message)}\n\n"
     finally:
         with SUBSCRIBERS_LOCK:
