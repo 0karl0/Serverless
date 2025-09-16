@@ -15,7 +15,8 @@ from PIL import Image
 
 
 # Environment variables
-AWS_ENDPOINT_URL = os.environ.get("AWS_ENDPOINT_URL")
+AWS_ENDPOINT_URL = os.environ.get("AWS_ENDPOINT_URL","http://localhost:4566")
+#AWS_ENDPOINT_URL = os.environ.get("AWS_ENDPOINT_URL")
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
@@ -201,7 +202,8 @@ def process_image(key: str) -> None:
     obj = s3.get_object(Bucket=UPLOAD_BUCKET, Key=key)
     img = Image.open(obj["Body"]).convert("RGB")
     arr = np.array(img)
-    tensor = torch.tensor(arr, device="cuda")
+    #tensor = torch.tensor(arr, device="cuda")
+    tensor = torch.tensor(arr, device="cpu")
     inverted = 255 - tensor
     result = Image.fromarray(inverted.to("cpu").numpy().astype("uint8"))
 
@@ -249,6 +251,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    if not torch.cuda.is_available():
-        raise RuntimeError("CUDA GPU not available")
+    #if not torch.cuda.is_available():
+    #    raise RuntimeError("CUDA GPU not available")
     main()
